@@ -10,7 +10,7 @@ import numpy as np
 
 # Size in pixels of a tile in the full-scale human view
 TILE_PIXELS = 32
-
+obs_history = []
 # Map of color names to RGB values
 COLORS = {
     'red': np.array([255, 0, 0]),
@@ -144,11 +144,12 @@ class WorldObj:
         return False
 
     def encode(self, world, current_agent=False):
+        # print("1")
         """Encode the a description of this object as a 3-tuple of integers"""
         if world.encode_dim==3:
             return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], 0)
         else:
-            return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], 0, 0, 0, 0)
+            return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], 0, 0, 0, 1)
 
     @staticmethod
     def decode(type_idx, color_idx, state):
@@ -286,6 +287,7 @@ class Door(WorldObj):
         return True
 
     def encode(self, world, current_agent=False):
+        print("2")
         """Encode the a description of this object as a 3-tuple of integers"""
 
         # State, 0: open, 1: closed, 2: locked
@@ -296,7 +298,7 @@ class Door(WorldObj):
         elif not self.is_open:
             state = 1
 
-        return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], state, 0, 0, 0)
+        return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], state, 0, 0, 1)
 
     def render(self, img):
         c = COLORS[self.color]
@@ -406,7 +408,8 @@ class Agent(WorldObj):
         fill_coords(img, tri_fn, c)
 
     def encode(self, world, current_agent=False):
-        """Encode the a description of this object as a 3-tuple of integers"""
+        # print("3")
+        # """Encode the a description of this object as a 3-tuple of integers"""
         if world.encode_dim==3:
             return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], self.dir)
         elif self.carrying:
@@ -415,7 +418,7 @@ class Agent(WorldObj):
                         world.COLOR_TO_IDX[self.carrying.color], self.dir, 1)
             else:
                 return (world.OBJECT_TO_IDX[self.type], world.COLOR_TO_IDX[self.color], world.OBJECT_TO_IDX[self.carrying.type],
-                        world.COLOR_TO_IDX[self.carrying.color], self.dir, 0)
+                        world.COLOR_TO_IDX[self.carrying.color], self.dir, 1)
 
         else:
             if current_agent:
@@ -483,9 +486,10 @@ class Agent(WorldObj):
         Note: the bottom extent indices are not included in the set
         """
 
+        # Facing righ
         # Facing right
         if self.dir == 0:
-            topX = self.pos[0]
+            topX = self.pos[0] - self.view_size // 2
             topY = self.pos[1] - self.view_size // 2
         # Facing down
         elif self.dir == 1:
@@ -502,9 +506,10 @@ class Agent(WorldObj):
         else:
             assert False, "invalid agent direction"
 
-        botX = topX + self.view_size
-        botY = topY + self.view_size
-
+        botX = topX - self.view_size
+        botY = topY - self.view_size 
+        # topX, topY, botX, botY = 0,10,0,10
+        print((topX, topY, botX, botY))
         return (topX, topY, botX, botY)
 
     def relative_coords(self, x, y):
@@ -514,8 +519,8 @@ class Agent(WorldObj):
 
         vx, vy = self.get_view_coords(x, y)
 
-        if vx < 0 or vy < 0 or vx >= self.view_size or vy >= self.view_size:
-            return None
+        # if vx < 0 or vy < 0 or vx >= self.view_size or vy >= self.view_size:
+        #     return None
 
         return vx, vy
 
@@ -560,7 +565,9 @@ class Grid:
         return False
 
     def __eq__(self, other):
+
         grid1 = self.encode()
+
         grid2 = other.encode()
         return np.array_equal(grid2, grid1)
 
@@ -649,6 +656,7 @@ class Grid:
         """
 
         key = (*highlights, tile_size)
+
         key = obj.encode(world) + key if obj else key
 
         if key in cls.tile_cache:
@@ -716,6 +724,7 @@ class Grid:
         return img
 
     def encode(self, world, vis_mask=None):
+        print("4")
         """
         Produce a compact numpy encoding of the grid
         """
@@ -740,6 +749,7 @@ class Grid:
                             array[i, j, 5] = 0
 
                     else:
+
                         array[i, j, :] = v.encode(world)
 
         return array
@@ -1320,8 +1330,10 @@ class MultiGridEnv(gym.Env):
         if comm_counter%comm_freq == 0:
             print("Communicating")
             obs = [self.grid.encode_for_agents(world=World, agent_pos=self.agents[i].pos) for i in range(len(actions))]
+            print(obs)
         else:
             obs = [self.grid.encode_for_agents(world=World, agent_pos=self.agents[i].pos) for i in range(len(actions))]
+        obs_history.append(obs)
 
         # if self.partial_obs:
         #     obs = self.gen_obs()
@@ -1356,10 +1368,11 @@ class MultiGridEnv(gym.Env):
             if not self.see_through_walls:
                 vis_mask = grid.process_vis(agent_pos=(a.view_size // 2, a.view_size - 1))
             else:
-                vis_mask = np.ones(shape=(grid.width, grid.height), dtype=np.bool)
-
+                vis_mask = np.ones(shape=(grid.width, grid.height), dtype=bool)
+            # vis_mask = np.ones(shape=(grid.width, grid.height), dtype=bool)
             grids.append(grid)
             vis_masks.append(vis_mask)
+            print(vis_masks)
 
         return grids, vis_masks
 
